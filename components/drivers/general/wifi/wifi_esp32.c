@@ -258,9 +258,9 @@ void app_wifi_set_softap_info(void)
     memset(softap_ssid, 0x0, sizeof(softap_ssid));
 
 #ifdef CONFIG_BRIDGE_SOFTAP_SSID_END_WITH_THE_MAC
-    snprintf(softap_ssid, sizeof(softap_ssid), "%.25s_%02x%02x%02x", CONFIG_BRIDGE_SOFTAP_SSID, softap_mac[3], softap_mac[4], softap_mac[5]);
+    snprintf(softap_ssid, sizeof(softap_ssid), "%.25s_%02x%02x%02x", CONFIG_ROUTER_SSID, softap_mac[3], softap_mac[4], softap_mac[5]);
 #else
-    snprintf(softap_ssid, sizeof(softap_ssid), "%.32s", CONFIG_BRIDGE_SOFTAP_SSID);
+    snprintf(softap_ssid, sizeof(softap_ssid), "%.32s", CONFIG_ROUTER_SSID);
 #endif
     if (esp_mesh_lite_get_softap_ssid_from_nvs(softap_ssid, &size) != ESP_OK)
     {
@@ -268,9 +268,9 @@ void app_wifi_set_softap_info(void)
     }
     if (esp_mesh_lite_get_softap_psw_from_nvs(softap_psw, &size) != ESP_OK)
     {
-        esp_mesh_lite_set_softap_psw_to_nvs(CONFIG_BRIDGE_SOFTAP_PASSWORD);
+        esp_mesh_lite_set_softap_psw_to_nvs(CONFIG_ROUTER_PASSWORD);
     }
-    esp_mesh_lite_set_softap_info(softap_ssid, CONFIG_BRIDGE_SOFTAP_PASSWORD);
+    esp_mesh_lite_set_softap_info(softap_ssid, CONFIG_ROUTER_PASSWORD);
 }
 
 static const char *TAG_APP = "app";
@@ -426,8 +426,8 @@ void wifiInit(void)
         esp_bridge_wifi_set_config(WIFI_IF_STA, &wifi_config);
 
         // Softap
-        snprintf((char *)wifi_config.ap.ssid, sizeof(wifi_config.ap.ssid), "%s", CONFIG_BRIDGE_SOFTAP_SSID);
-        strlcpy((char *)wifi_config.ap.password, CONFIG_BRIDGE_SOFTAP_PASSWORD, sizeof(wifi_config.ap.password));
+        snprintf((char *)wifi_config.ap.ssid, sizeof(wifi_config.ap.ssid), "%s", CONFIG_ROUTER_SSID);
+        strlcpy((char *)wifi_config.ap.password, CONFIG_ROUTER_PASSWORD, sizeof(wifi_config.ap.password));
         esp_bridge_wifi_set_config(WIFI_IF_AP, &wifi_config);
 
         esp_mesh_lite_config_t mesh_lite_config = ESP_MESH_LITE_DEFAULT_INIT();
@@ -448,7 +448,7 @@ void wifiInit(void)
     ESP_ERROR_CHECK(espnow_ctrl_responder_bind(30 * 1000, -55, NULL));
     espnow_ctrl_responder_data(espnow_ctrl_data_cb);
 
-    ESP_LOGI(TAG_APP, "wifi_init_softap complete.SSID:%s password:%s", CONFIG_BRIDGE_SOFTAP_SSID, CONFIG_BRIDGE_SOFTAP_PASSWORD);
+    ESP_LOGI(TAG_APP, "wifi_init_softap complete.SSID:%s password:%s", CONFIG_ROUTER_SSID, CONFIG_ROUTER_PASSWORD);
 
     xTaskCreate(udp_server_tx_task, UDP_TX_TASK_NAME, UDP_TX_TASK_STACKSIZE, NULL, UDP_TX_TASK_PRI, NULL);
     xTaskCreate(udp_server_rx_task, UDP_RX_TASK_NAME, UDP_RX_TASK_STACKSIZE, NULL, UDP_RX_TASK_PRI, NULL);
