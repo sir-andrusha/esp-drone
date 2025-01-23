@@ -1,4 +1,5 @@
 #include <string.h>
+#include <stdlib.h>
 
 #include "config.h"
 #include "freertos/FreeRTOS.h"
@@ -248,9 +249,11 @@ static void app_espnow_event_handler(void *handler_args, esp_event_base_t base, 
     }
 }
 
+static char softap_ssid[32];
+
 void app_wifi_set_softap_info(void)
 {
-    char softap_ssid[32];
+    
     char softap_psw[64];
     uint8_t softap_mac[6];
     size_t size = sizeof(softap_psw);
@@ -258,9 +261,9 @@ void app_wifi_set_softap_info(void)
     memset(softap_ssid, 0x0, sizeof(softap_ssid));
 
 #ifdef CONFIG_BRIDGE_SOFTAP_SSID_END_WITH_THE_MAC
-    snprintf(softap_ssid, sizeof(softap_ssid), "%.25s_%02x%02x%02x", CONFIG_ROUTER_SSID, softap_mac[3], softap_mac[4], softap_mac[5]);
+    snprintf(softap_ssid, sizeof(softap_ssid), "%.25s_%02x%02x%02x", CONFIG_BRIDGE_SOFTAP_SSID, softap_mac[3], softap_mac[4], softap_mac[5]);
 #else
-    snprintf(softap_ssid, sizeof(softap_ssid), "%.32s", CONFIG_ROUTER_SSID);
+    snprintf(softap_ssid, sizeof(softap_ssid), "%.32s", CONFIG_BRIDGE_SOFTAP_SSID);
 #endif
     if (esp_mesh_lite_get_softap_ssid_from_nvs(softap_ssid, &size) != ESP_OK)
     {
@@ -268,9 +271,9 @@ void app_wifi_set_softap_info(void)
     }
     if (esp_mesh_lite_get_softap_psw_from_nvs(softap_psw, &size) != ESP_OK)
     {
-        esp_mesh_lite_set_softap_psw_to_nvs(CONFIG_ROUTER_PASSWORD);
+        esp_mesh_lite_set_softap_psw_to_nvs(CONFIG_BRIDGE_SOFTAP_PASSWORD);
     }
-    esp_mesh_lite_set_softap_info(softap_ssid, CONFIG_ROUTER_PASSWORD);
+    esp_mesh_lite_set_softap_info(softap_ssid, CONFIG_BRIDGE_SOFTAP_PASSWORD);
 }
 
 static const char *TAG_APP = "app";
@@ -300,8 +303,6 @@ static void print_system_info_timercb(TimerHandle_t timer)
     }
 }
 
-static const char *ping_word = "ping";
-
 static void udp_client_task(void *pvParameters)
 {
     char rx_buffer[128];
@@ -316,13 +317,15 @@ static void udp_client_task(void *pvParameters)
     ip_struct.s_addr = sta_ip.ip.addr;
     char *ipStr = inet_ntoa(ip_struct);
     ESP_LOGI(TAG_APP, "my IP: %s", ipStr);
-    char *ping_sencence = malloc(sizeof(*ipStr) + sizeof(*ping_word));
-    sprintf(ping_sencence, "%s:%s", ipStr, ping_word);
+    char *ping_sencence = NULL;
+    asprintf(&ping_sencence, "%s:%s:%s", softap_ssid, ipStr, "ping");
 
+    struct sockaddr_in health_dest_addr = {0};
+    health_dest_addr.sin_addr.s_addr = inet_addr(CONFIG_SERVER_IP);
+    health_dest_addr.sin_family = AF_INET;
+    health_dest_addr.sin_port = htons(CONFIG_SERVER_PORT);
+    
     while (1) {
-        dest_addr.sin_addr.s_addr = inet_addr(CONFIG_SERVER_IP);
-        dest_addr.sin_family = AF_INET;
-        dest_addr.sin_port = htons(CONFIG_SERVER_PORT);
         addr_family = AF_INET;
         ip_protocol = IPPROTO_IP;
 
@@ -341,7 +344,7 @@ static void udp_client_task(void *pvParameters)
         ESP_LOGI(TAG_APP, "Socket created, starting pinging server %s:%d", CONFIG_SERVER_IP, CONFIG_SERVER_PORT);
 
         while (1) {
-            int err = sendto(sock, ping_sencence, strlen(ping_sencence), 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+            int err = sendto(sock, ping_sencence, strlen(ping_sencence), 0, (struct sockaddr *)&health_dest_addr, sizeof(health_dest_addr));
             if (err < 0) {
                 ESP_LOGE(TAG_APP, "Error occurred during sending: errno %d", errno);
                 break;
@@ -362,16 +365,28 @@ static void udp_client_task(void *pvParameters)
                 rx_buffer[len] = 0; // Null-terminate whatever we received and treat like a string
                 ESP_LOGI(TAG_APP, "Received %d bytes from %s:", len, host_ip);
                 ESP_LOGI(TAG_APP, "%s", rx_buffer);
-                if (strncmp(rx_buffer, "pong", 4) != 0) {
-                    ESP_LOGI(TAG_APP, "Received unexpected message, reconnecting");
+                // if (strncmp(rx_buffer, "pong", 4) != 0) {
+                //     ESP_LOGI(TAG_APP, "Received unexpected message, reconnecting");
+                //     break;
+                // }
+                uint32_t new_port = atoi(rx_buffer);
+                dest_addr.sin_addr.s_addr = inet_addr(CONFIG_SERVER_IP);
+                dest_addr.sin_family = AF_INET;
+                dest_addr.sin_port = htons(new_port);
+
+                int err = sendto(sock, ping_sencence, strlen(ping_sencence), 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+                if (err < 0) {
+                    ESP_LOGE(TAG_APP, "Error occurred during sending: errno %d", errno);
                     break;
                 }
+                isUDPInit = true;
             }
 
-            vTaskDelay(2000 / portTICK_PERIOD_MS);
+            vTaskDelay(5000 / portTICK_PERIOD_MS);
         }
 
         if (sock != -1) {
+            isUDPInit = false;
             ESP_LOGE(TAG_APP, "Shutting down socket and restarting...");
             shutdown(sock, 0);
             close(sock);
@@ -391,9 +406,6 @@ static void ip_event_sta_got_ip_handler(void *arg, esp_event_base_t event_base,
         tcp_task = true;
     }
 }
-
-#define CONFIG_ROUTER_SSID CONFIG_BRIDGE_SOFTAP_SSID
-#define CONFIG_ROUTER_PASSWORD CONFIG_BRIDGE_SOFTAP_PASSWORD
 
 void wifiInit(void)
 {
@@ -426,8 +438,8 @@ void wifiInit(void)
         esp_bridge_wifi_set_config(WIFI_IF_STA, &wifi_config);
 
         // Softap
-        snprintf((char *)wifi_config.ap.ssid, sizeof(wifi_config.ap.ssid), "%s", CONFIG_ROUTER_SSID);
-        strlcpy((char *)wifi_config.ap.password, CONFIG_ROUTER_PASSWORD, sizeof(wifi_config.ap.password));
+        snprintf((char *)wifi_config.ap.ssid, sizeof(wifi_config.ap.ssid), "%s", CONFIG_BRIDGE_SOFTAP_SSID);
+        strlcpy((char *)wifi_config.ap.password, CONFIG_BRIDGE_SOFTAP_PASSWORD, sizeof(wifi_config.ap.password));
         esp_bridge_wifi_set_config(WIFI_IF_AP, &wifi_config);
 
         esp_mesh_lite_config_t mesh_lite_config = ESP_MESH_LITE_DEFAULT_INIT();
@@ -448,7 +460,7 @@ void wifiInit(void)
     ESP_ERROR_CHECK(espnow_ctrl_responder_bind(30 * 1000, -55, NULL));
     espnow_ctrl_responder_data(espnow_ctrl_data_cb);
 
-    ESP_LOGI(TAG_APP, "wifi_init_softap complete.SSID:%s password:%s", CONFIG_ROUTER_SSID, CONFIG_ROUTER_PASSWORD);
+    ESP_LOGI(TAG_APP, "wifi_init_softap complete.SSID:%s password:%s", CONFIG_BRIDGE_SOFTAP_SSID, CONFIG_BRIDGE_SOFTAP_PASSWORD);
 
     xTaskCreate(udp_server_tx_task, UDP_TX_TASK_NAME, UDP_TX_TASK_STACKSIZE, NULL, UDP_TX_TASK_PRI, NULL);
     xTaskCreate(udp_server_rx_task, UDP_RX_TASK_NAME, UDP_RX_TASK_STACKSIZE, NULL, UDP_RX_TASK_PRI, NULL);

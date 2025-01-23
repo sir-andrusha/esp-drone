@@ -351,19 +351,19 @@ menu "ESPDrone Config"
 
     config ROUTER_SSID
         string "Router SSID"
-            default "ROUTER_SSID"
+            default "grouter"
             help
                 Router SSID.
     
     config ROUTER_PASSWORD
         string "Router password"
-            default "ROUTER_PASSWORD"
+            default "12345678"
             help
                 Router password.
     
     config SERVER_IP
         string "Server IP address"
-            default "192.168.0.1"
+            default "192.168.5.2"
             help
                 Server IP address.
                 

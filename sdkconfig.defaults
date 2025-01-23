@@ -74,7 +74,7 @@ CONFIG_BRIDGE_SOFTAP_SSID_END_WITH_THE_MAC=y
 
 # App settigs
 
-CONFIG_BRIDGE_SOFTAP_SSID="ESP_Bridge"
+CONFIG_BRIDGE_SOFTAP_SSID="grouter"
 CONFIG_BRIDGE_SOFTAP_PASSWORD="12345678"
 
 # this is address of PC where esp-drone-graouncontrol in run
